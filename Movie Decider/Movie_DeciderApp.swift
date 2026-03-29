@@ -12,6 +12,7 @@ struct Movie_DeciderApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(.dark)
         }
     }
 }
