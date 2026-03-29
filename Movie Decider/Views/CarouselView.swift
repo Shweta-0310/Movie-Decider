@@ -3,38 +3,44 @@ import SwiftUI
 struct CarouselView: View {
     let movies: [Movie]
     @Binding var selectedIndex: Int
+    @State private var scrolledID: Int?
 
     var body: some View {
         GeometryReader { proxy in
-            let cardWidth = proxy.size.width - 96  // 48pt padding each side
-            let cardHeight = cardWidth * 1.48      // standard 2:3 poster ratio
+            let peekAmount: CGFloat = 44
+            let spacing: CGFloat = 12
+            let cardWidth  = proxy.size.width - peekAmount * 2
+            let cardHeight = cardWidth * 1.5   // true 2:3 poster ratio
 
-            TabView(selection: $selectedIndex) {
-                ForEach(Array(movies.enumerated()), id: \.element.id) { index, movie in
-                    MoviePosterCard(movie: movie, isSelected: selectedIndex == index)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: spacing) {
+                    ForEach(Array(movies.enumerated()), id: \.element.id) { index, movie in
+                        MoviePosterCard(
+                            movie: movie,
+                            isSelected: (scrolledID ?? selectedIndex) == index
+                        )
                         .frame(width: cardWidth, height: cardHeight)
-                        .padding(.horizontal, 48)
-                        .tag(index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: cardHeight + 10)
-            .overlay(alignment: .bottom) {
-                HStack(spacing: 6) {
-                    ForEach(movies.indices, id: \.self) { i in
-                        Circle()
-                            .fill(i == selectedIndex ? Color.white : Color.white.opacity(0.30))
-                            .frame(
-                                width: i == selectedIndex ? 8 : 5,
-                                height: i == selectedIndex ? 8 : 5
-                            )
-                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedIndex)
+                        .id(index)
                     }
                 }
-                .padding(.bottom, 10)
+                .scrollTargetLayout()
             }
+            // Creates the peek inset on both sides without blank padding views
+            .contentMargins(.horizontal, peekAmount, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $scrolledID)
+            .onChange(of: scrolledID) { _, newValue in
+                if let v = newValue { selectedIndex = v }
+            }
+            .onChange(of: selectedIndex) { _, newValue in
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.78)) {
+                    scrolledID = newValue
+                }
+            }
+            .onAppear { scrolledID = selectedIndex }
+            .frame(height: cardHeight + 20)
         }
-        .frame(height: 460)
+        .frame(height: (UIScreen.main.bounds.width - 88) * 1.5 + 20)
     }
 }
 
