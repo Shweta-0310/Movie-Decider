@@ -3,6 +3,11 @@ import SwiftUI
 struct CarouselView: View {
     let movies: [Movie]
     @Binding var selectedIndex: Int
+    var namespace: Namespace.ID
+    // Set to the id of the movie whose detail is currently open,
+    // so its card can hide itself (opacity 0) while staying in the tree.
+    var showingDetailForMovieID: UUID? = nil
+
     @State private var scrolledID: Int?
 
     var body: some View {
@@ -17,7 +22,11 @@ struct CarouselView: View {
                     ForEach(Array(movies.enumerated()), id: \.element.id) { index, movie in
                         MoviePosterCard(
                             movie: movie,
-                            isSelected: (scrolledID ?? selectedIndex) == index
+                            isSelected: (scrolledID ?? selectedIndex) == index,
+                            namespace: namespace,
+                            // Card is NOT the geometry source only when the detail
+                            // is open for this specific movie.
+                            isSourceOfTruth: showingDetailForMovieID != movie.id
                         )
                         .frame(width: cardWidth, height: cardHeight)
                         .id(index)
@@ -25,7 +34,6 @@ struct CarouselView: View {
                 }
                 .scrollTargetLayout()
             }
-            // Creates the peek inset on both sides without blank padding views
             .contentMargins(.horizontal, peekAmount, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
@@ -45,8 +53,9 @@ struct CarouselView: View {
 }
 
 #Preview {
+    @Previewable @Namespace var ns
     ZStack {
         Color.black.ignoresSafeArea()
-        CarouselView(movies: Movie.sampleMovies, selectedIndex: .constant(0))
+        CarouselView(movies: Movie.sampleMovies, selectedIndex: .constant(0), namespace: ns)
     }
 }

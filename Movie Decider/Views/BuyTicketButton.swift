@@ -10,6 +10,7 @@ struct BuyTicketButton: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
+                .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.white.opacity(0.70), lineWidth: 1.5)

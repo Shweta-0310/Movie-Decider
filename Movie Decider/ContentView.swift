@@ -11,11 +11,16 @@ struct ContentView: View {
     @State private var selectedIndex: Int = 0
     private let movies = Movie.sampleMovies
 
+    // Hero transition namespace — shared with CarouselView → MoviePosterCard → MovieDetailView
+    @Namespace private var heroNamespace
+
+    // Detail sheet state
+    @State private var showDetail: Bool  = false
+    @State private var detailMovie: Movie? = nil
+
     var currentMovie: Movie { movies[selectedIndex] }
 
     // Mask gradient: opaque at top → transparent at bottom.
-    // The dominant color sits on top of #161616; this mask controls
-    // how much of it shows at each point across the full screen height.
     private var maskGradient: LinearGradient {
         LinearGradient(
             stops: [
@@ -32,6 +37,36 @@ struct ContentView: View {
     }
 
     var body: some View {
+        ZStack {
+            // ── Main content ──────────────────────────────────────────────────
+            mainContent
+
+            // ── Detail overlay ────────────────────────────────────────────────
+            // zIndex(1) is required: without it SwiftUI may reorder layers during
+            // the removal animation causing the hero to snap instead of animate.
+            if showDetail, let movie = detailMovie {
+                MovieDetailView(
+                    movie: movie,
+                    namespace: heroNamespace,
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                            showDetail = false
+                        }
+                    }
+                )
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom),
+                    removal:   .move(edge: .bottom)
+                ))
+                .zIndex(1)
+            }
+        }
+        .animation(.spring(response: 0.55, dampingFraction: 0.8), value: showDetail)
+    }
+
+    // ── Main screen ───────────────────────────────────────────────────────────
+
+    private var mainContent: some View {
         VStack(spacing: 0) {
             // Navigation header
             HStack {
@@ -58,11 +93,18 @@ struct ContentView: View {
             .padding(.horizontal, 24)
             .padding(.top, 12)
 
-            // Movie carousel
-            CarouselView(movies: movies, selectedIndex: $selectedIndex)
-                .padding(.top, 16)
+            // Carousel — passes namespace so each card can participate in the hero transition.
+            // showingDetailForMovieID makes the active card invisible (not removed) while
+            // the detail view is open, so matchedGeometryEffect has its source frame.
+            CarouselView(
+                movies: movies,
+                selectedIndex: $selectedIndex,
+                namespace: heroNamespace,
+                showingDetailForMovieID: showDetail ? detailMovie?.id : nil
+            )
+            .padding(.top, 16)
 
-            // Detail + CTA
+            // Title, ratings, CTA
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     ZStack {
@@ -91,27 +133,29 @@ struct ContentView: View {
                     .padding(.top, 20)
                     .animation(.easeInOut(duration: 0.35), value: selectedIndex)
 
-                    BuyTicketButton()
-                        .padding(.top, 28)
-                        .padding(.bottom, 36)
+                    // Tapping Buy Ticket triggers the hero transition with haptic feedback
+                    BuyTicketButton {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        detailMovie = currentMovie
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                            showDetail = true
+                        }
+                    }
+                    .padding(.top, 28)
+                    .padding(.bottom, 36)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // ↓ Background is attached here so .ignoresSafeArea() on it
-        //   guarantees it bleeds behind the Dynamic Island / status bar
-        //   while the VStack content above still respects the safe area.
         .background {
             ZStack {
-                // Base — always #161616
                 Color(red: 0.0863, green: 0.0863, blue: 0.0863)
 
-                // Dominant colour fades from full at top → gone at bottom
                 currentMovie.dominantColor
                     .mask(maskGradient)
                     .animation(.easeInOut(duration: 0.50), value: selectedIndex)
             }
-            .ignoresSafeArea()   // the ONLY place .ignoresSafeArea() is needed
+            .ignoresSafeArea()
         }
     }
 }
