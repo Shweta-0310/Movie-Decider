@@ -12,17 +12,38 @@ struct MovieDetailView: View {
     @State private var castVisible        = false
     @State private var buttonVisible      = false
 
+    // Dark gradient fades in after the poster flies into place
+    @State private var bgOpacity: Double = 0
+    // Corner radius animates from card (22pt) → full bleed (0pt) during hero expansion
+    @State private var posterCornerRadius: CGFloat = 22
+
     // Tracks drag distance for swipe-down-to-dismiss
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .top) {
 
+            // ── Dark gradient for readability (fades in after poster settles) ─
+            LinearGradient(
+                stops: [
+                    .init(color: .clear,               location: 0.0),
+                    .init(color: .black.opacity(0.30), location: 0.3),
+                    .init(color: .black.opacity(0.75), location: 0.6),
+                    .init(color: .black.opacity(0.92), location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .opacity(bgOpacity)
+
+            // ── Subtle material blur ──────────────────────────────────────────
+            Color.clear
+                .background(.ultraThinMaterial)
+                .opacity(bgOpacity * 0.20)
+                .ignoresSafeArea()
+
             // ── Scrollable content ────────────────────────────────────────────
-            // The ScrollView is the layout anchor so its width is always screen-
-            // width. Background layers are attached here so the matchedGeometry-
-            // Effect image's animated layout frame never affects the ZStack's
-            // sizing (which was causing content to shift off the left edge).
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
 
@@ -40,13 +61,13 @@ struct MovieDetailView: View {
                             .foregroundColor(Color.white.opacity(0.55))
                     }
                     .opacity(titleVisible ? 1 : 0)
-                    .offset(y: titleVisible ? 0 : 16)
+                    .offset(y: titleVisible ? 0 : 10)
 
                     // Ratings
                     RatingsRowView(movie: movie)
                         .padding(.top, 20)
                         .opacity(ratingsVisible ? 1 : 0)
-                        .offset(y: ratingsVisible ? 0 : 16)
+                        .offset(y: ratingsVisible ? 0 : 10)
 
                     // Description
                     Text(movie.description)
@@ -56,7 +77,7 @@ struct MovieDetailView: View {
                         .multilineTextAlignment(.leading)
                         .padding(.top, 20)
                         .opacity(descriptionVisible ? 1 : 0)
-                        .offset(y: descriptionVisible ? 0 : 16)
+                        .offset(y: descriptionVisible ? 0 : 10)
 
                     // Cast — negative horizontal padding escapes the outer 24pt
                     // inset so the horizontal scroll can reach the screen edges
@@ -64,48 +85,13 @@ struct MovieDetailView: View {
                         .padding(.horizontal, -24)
                         .padding(.top, 24)
                         .opacity(castVisible ? 1 : 0)
-                        .offset(y: castVisible ? 0 : 16)
+                        .offset(y: castVisible ? 0 : 10)
 
                     Spacer().frame(height: 32)
                 }
                 // Single source of 24 pt horizontal inset for all content
                 .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity)
-            }
-            .background {
-                // ── Hero poster (matchedGeometryEffect destination) ───────────
-                // isSource: false — the carousel card is always the source.
-                // Placed in .background so its animated layout frame never
-                // widens the ZStack and displaces the ScrollView.
-                Image(movie.posterImageName)
-                    .resizable()
-                    .scaledToFill()
-                    .matchedGeometryEffect(
-                        id: "poster-\(movie.id)",
-                        in: namespace,
-                        isSource: false
-                    )
-                    .clipped()
-                    .ignoresSafeArea()
-
-                // ── Dark gradient for readability ─────────────────────────────
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear,               location: 0.0),
-                        .init(color: .black.opacity(0.30), location: 0.3),
-                        .init(color: .black.opacity(0.75), location: 0.6),
-                        .init(color: .black.opacity(0.92), location: 1.0),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
-                // ── Subtle material blur ───────────────────────────────────────
-                Color.clear
-                    .background(.ultraThinMaterial)
-                    .opacity(0.20)
-                    .ignoresSafeArea()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Pinned Buy Ticket button that doesn't scroll away
@@ -148,6 +134,22 @@ struct MovieDetailView: View {
             .padding(.trailing, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // ── Hero poster (matchedGeometryEffect destination) ───────────────────
+        // Lives in .background of the ZStack — the ZStack's frame is always a
+        // stable full screen, so SwiftUI has a clear destination to interpolate
+        // toward and the animation runs properly without displacing siblings.
+        .background {
+            Image(movie.posterImageName)
+                .resizable()
+                .scaledToFill()
+                .matchedGeometryEffect(
+                    id: "poster-\(movie.id)",
+                    in: namespace,
+                    isSource: false
+                )
+                .clipShape(RoundedRectangle(cornerRadius: posterCornerRadius))
+                .ignoresSafeArea()
+        }
         // Apply drag offset to the whole view for swipe-down feel
         .offset(y: dragOffset)
         // Swipe-down-to-dismiss gesture.
@@ -172,7 +174,16 @@ struct MovieDetailView: View {
                 }
         )
         .onAppear {
-            // Stagger each content block's fade-in after the poster has expanded (0.3s head start)
+            // 1. Corner radius: 22 → 0, matching the hero spring so the card
+            //    morphs seamlessly into a full-bleed background
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                posterCornerRadius = 0
+            }
+            // 2. Dark overlay waits for the poster to finish flying before fading in
+            withAnimation(.easeOut(duration: 0.40).delay(0.25)) {
+                bgOpacity = 1.0
+            }
+            // 3. Content elements cascade-fade in with a subtle 10pt nudge up
             withAnimation(.easeOut(duration: 0.35).delay(0.30)) { titleVisible       = true }
             withAnimation(.easeOut(duration: 0.35).delay(0.38)) { ratingsVisible     = true }
             withAnimation(.easeOut(duration: 0.35).delay(0.46)) { descriptionVisible = true }

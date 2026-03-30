@@ -55,7 +55,7 @@ struct ContentView: View {
                     }
                 )
                 .transition(.asymmetric(
-                    insertion: .move(edge: .bottom),
+                    insertion: .identity,          // poster flies freely via matchedGeometryEffect
                     removal:   .move(edge: .bottom)
                 ))
                 .zIndex(1)
@@ -100,11 +100,18 @@ struct ContentView: View {
                 movies: movies,
                 selectedIndex: $selectedIndex,
                 namespace: heroNamespace,
-                showingDetailForMovieID: showDetail ? detailMovie?.id : nil
+                showingDetailForMovieID: showDetail ? detailMovie?.id : nil,
+                onTap: { movie in
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    detailMovie = movie
+                    withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                        showDetail = true
+                    }
+                }
             )
             .padding(.top, 16)
 
-            // Title, ratings, CTA
+            // Title and ratings
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     ZStack {
@@ -131,18 +138,8 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 20)
-                    .animation(.easeInOut(duration: 0.35), value: selectedIndex)
-
-                    // Tapping Buy Ticket triggers the hero transition with haptic feedback
-                    BuyTicketButton {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        detailMovie = currentMovie
-                        withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
-                            showDetail = true
-                        }
-                    }
-                    .padding(.top, 28)
                     .padding(.bottom, 36)
+                    .animation(.easeInOut(duration: 0.35), value: selectedIndex)
                 }
             }
         }

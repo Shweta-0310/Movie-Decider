@@ -7,6 +7,7 @@ struct CarouselView: View {
     // Set to the id of the movie whose detail is currently open,
     // so its card can hide itself (opacity 0) while staying in the tree.
     var showingDetailForMovieID: UUID? = nil
+    var onTap: (Movie) -> Void = { _ in }
 
     @State private var scrolledID: Int?
 
@@ -30,6 +31,7 @@ struct CarouselView: View {
                         )
                         .frame(width: cardWidth, height: cardHeight)
                         .id(index)
+                        .onTapGesture { onTap(movie) }
                     }
                 }
                 .scrollTargetLayout()
