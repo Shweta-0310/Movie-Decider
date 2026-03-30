@@ -40,7 +40,10 @@ struct CarouselView: View {
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
             .onChange(of: scrolledID) { _, newValue in
-                if let v = newValue { selectedIndex = v }
+                if let v = newValue {
+                    selectedIndex = v
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
             }
             .onChange(of: selectedIndex) { _, newValue in
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.78)) {

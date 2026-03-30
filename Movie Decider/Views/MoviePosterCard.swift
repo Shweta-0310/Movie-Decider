@@ -25,10 +25,18 @@ struct MoviePosterCard: View {
             )
         }
         .clipShape(RoundedRectangle(cornerRadius: 22))
+        // drawingGroup() rasterises the clipped card into a GPU texture BEFORE
+        // compositing. This eliminates the 1-2pt anti-aliased fringe that
+        // clipShape leaves at the bottom edge (secondary cause of the line).
+        .drawingGroup()
         // matchedGeometryEffect must come AFTER clipShape so the geometry
         // frame matches the clipped (rounded) bounds, not the raw image bounds.
         .modifier(HeroModifier(movie: movie, namespace: namespace, isSource: isSourceOfTruth))
-        .shadow(color: movie.dominantColor.opacity(0.6), radius: 24, x: 0, y: 12)
+        // Negative y shifts the shadow centre ABOVE the card bottom so the
+        // shadow tail below the card = (radius − |y|) = 18 − 6 = 12 pt,
+        // which fits inside the ScrollView's 20 pt overhang without being
+        // hard-clipped. That clipping was the primary cause of the line.
+        .shadow(color: movie.dominantColor.opacity(0.5), radius: 18, x: 0, y: -6)
         .scaleEffect(isSelected ? 1.0 : 0.88)
         // When isSourceOfTruth is false the detail view is open for this card;
         // hide it with opacity (never remove it — the geometry source must stay in the tree).

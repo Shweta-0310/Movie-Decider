@@ -21,14 +21,18 @@ struct ContentView: View {
     var currentMovie: Movie { movies[selectedIndex] }
 
     // Mask gradient: opaque at top → transparent at bottom.
+    // More stops produce a smoother, cinematic colour wash instead of a
+    // hard-edged band.
     private var maskGradient: LinearGradient {
         LinearGradient(
             stops: [
                 .init(color: .black,               location: 0.00),
-                .init(color: .black,               location: 0.25),
-                .init(color: .black.opacity(0.75), location: 0.50),
-                .init(color: .black.opacity(0.35), location: 0.75),
-                .init(color: .black.opacity(0.08), location: 0.92),
+                .init(color: .black,               location: 0.18),
+                .init(color: .black.opacity(0.88), location: 0.32),
+                .init(color: .black.opacity(0.68), location: 0.46),
+                .init(color: .black.opacity(0.45), location: 0.60),
+                .init(color: .black.opacity(0.22), location: 0.75),
+                .init(color: .black.opacity(0.06), location: 0.90),
                 .init(color: .clear,               location: 1.00),
             ],
             startPoint: .top,
@@ -44,10 +48,17 @@ struct ContentView: View {
             // ── Detail overlay ────────────────────────────────────────────────
             // zIndex(1) is required: without it SwiftUI may reorder layers during
             // the removal animation causing the hero to snap instead of animate.
-            if showDetail, let movie = detailMovie {
+            if showDetail, detailMovie != nil {
                 MovieDetailView(
-                    movie: movie,
+                    movies: movies,
+                    initialIndex: movies.firstIndex(where: { $0.id == detailMovie!.id }) ?? 0,
                     namespace: heroNamespace,
+                    onMovieChange: { newIndex in
+                        selectedIndex = newIndex
+                        // detailMovie intentionally NOT updated here — keeps
+                        // showingDetailForMovieID pointing to the originally-opened
+                        // card so the hero dismiss animation always flies back correctly.
+                    },
                     onDismiss: {
                         withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
                             showDetail = false
@@ -96,6 +107,8 @@ struct ContentView: View {
             // Carousel — passes namespace so each card can participate in the hero transition.
             // showingDetailForMovieID makes the active card invisible (not removed) while
             // the detail view is open, so matchedGeometryEffect has its source frame.
+            Spacer()
+
             CarouselView(
                 movies: movies,
                 selectedIndex: $selectedIndex,
@@ -109,39 +122,35 @@ struct ContentView: View {
                     }
                 }
             )
-            .padding(.top, 16)
 
             // Title and ratings
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    ZStack {
-                        VStack(spacing: 6) {
-                            Text(currentMovie.title)
-                                .font(.system(size: 30, weight: .bold))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
+            ZStack {
+                VStack(spacing: 6) {
+                    Text(currentMovie.title)
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
 
-                            Text("\(currentMovie.genre)  •  \(currentMovie.formattedDuration)")
-                                .font(.subheadline)
-                                .foregroundColor(Color.white.opacity(0.55))
-                        }
-                        .id(currentMovie.id)
-                        .transition(.opacity)
-                    }
-                    .padding(.top, 20)
-                    .animation(.easeInOut(duration: 0.35), value: selectedIndex)
-
-                    ZStack {
-                        RatingsRowView(movie: currentMovie)
-                            .id("ratings-\(currentMovie.id)")
-                            .transition(.opacity)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 20)
-                    .padding(.bottom, 36)
-                    .animation(.easeInOut(duration: 0.35), value: selectedIndex)
+                    Text("\(currentMovie.genre)  •  \(currentMovie.formattedDuration)")
+                        .font(.subheadline)
+                        .foregroundColor(Color.white.opacity(0.55))
                 }
+                .id(currentMovie.id)
+                .transition(.opacity)
             }
+            .padding(.top, 20)
+            .animation(.easeInOut(duration: 0.35), value: selectedIndex)
+
+            ZStack {
+                RatingsRowView(movie: currentMovie)
+                    .id("ratings-\(currentMovie.id)")
+                    .transition(.opacity)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .animation(.easeInOut(duration: 0.35), value: selectedIndex)
+
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
