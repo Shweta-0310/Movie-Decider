@@ -24,6 +24,8 @@ struct MovieDetailView: View {
 
     // Tracks drag distance for swipe-down-to-dismiss
     @State private var dragOffset: CGFloat = 0
+    // Tracks scroll position so dismiss gesture only fires at the top
+    @State private var scrollOffset: CGFloat = 0
 
     // Horizontal swipe navigation state
     @State private var swipeTranslation: CGFloat = 0
@@ -62,6 +64,15 @@ struct MovieDetailView: View {
             // ── Scrollable content ────────────────────────────────────────────
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
+
+                    // Scroll offset tracker — zero height, invisible
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ScrollOffsetKey.self,
+                            value: geo.frame(in: .named("detailScroll")).minY
+                        )
+                    }
+                    .frame(height: 0)
 
                     // Top dead-zone: carries the horizontal swipe gesture so it
                     // never competes with the cast horizontal ScrollView below.
@@ -147,6 +158,26 @@ struct MovieDetailView: View {
                 .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity)
             }
+            .coordinateSpace(name: "detailScroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = $0 }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onChanged { value in
+                        let dy = value.translation.height
+                        let dx = value.translation.width
+                        guard dy > abs(dx), dy > 0, scrollOffset >= -5 else { return }
+                        dragOffset = dy
+                    }
+                    .onEnded { value in
+                        if value.translation.height > 100 || value.predictedEndTranslation.height > 250 {
+                            onDismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                dragOffset = 0
+                            }
+                        }
+                    }
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Pinned Buy Ticket button that doesn't scroll away.
             // Lives in safeAreaInset so it is completely outside the scroll content
@@ -420,6 +451,13 @@ private struct CastMemberCard: View {
                 .lineLimit(2)
                 .frame(width: 76)
         }
+    }
+}
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
