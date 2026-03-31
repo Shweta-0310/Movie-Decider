@@ -28,6 +28,11 @@ struct MovieDetailView: View {
     // Horizontal swipe navigation state
     @State private var swipeTranslation: CGFloat = 0
     @State private var isTransitioning: Bool = false
+    @State private var posterSwipeReady = false
+    // Single offset applied to the entire poster strip during a commit.
+    // All adjacent posters are permanently in the hierarchy, so no view is
+    // ever inserted mid-animation — eliminating the SwiftUI timing freeze.
+    @State private var pagerOffset: CGFloat = 0
 
     private var currentMovie: Movie { movies[currentIndex] }
 
@@ -186,42 +191,63 @@ struct MovieDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // ── Hero poster (matchedGeometryEffect destination) ───────────────────
-        // The hero layer is ALWAYS locked to movies[initialIndex] so its
-        // matchedGeometryEffect ID never changes — eliminating the jitter caused
-        // by SwiftUI interpolating geometry from the carousel card position when
-        // the ID would switch during a swipe.
-        //
-        // A plain overlay image sits on top and crossfades to show the current
-        // movie during swipe navigation. It has no namespace participation, so
-        // there is zero geometry interpolation during transitions.
+        // Three-layer background:
+        //   Layer 1 — Hero with matchedGeometryEffect for open/close animation.
+        //             Fades out once posterSwipeReady is true.
+        //   Layer 2 — Pre-pager crossfade overlay (same as original), only while
+        //             posterSwipeReady is false and currentIndex != initialIndex.
+        //   Layer 3 — Horizontal pager with prev/current/next posters offset by
+        //             swipeTranslation. Active once posterSwipeReady is true.
         .background {
+            let sw = UIScreen.main.bounds.width
+            let sh = UIScreen.main.bounds.height
             ZStack {
-                // Hero layer — stable ID, handles open/close animation
+                // Immediate opaque base
+                Color.black
+
+                // Layer 1: Hero — stable matchedGeometryEffect, fades out once pager ready
                 Image(movies[initialIndex].posterImageName)
                     .resizable()
                     .scaledToFill()
+                    .frame(width: sw, height: sh)
                     .matchedGeometryEffect(
                         id: "poster-\(movies[initialIndex].id)",
                         in: namespace,
                         isSource: false
                     )
                     .clipShape(RoundedRectangle(cornerRadius: posterCornerRadius))
-                    .ignoresSafeArea()
+                    .opacity(posterSwipeReady ? 0 : 1)
 
-                // Swipe overlay — plain crossfade, no matchedGeometryEffect.
-                if currentIndex != initialIndex {
-                    GeometryReader { geo in
-                        Image(currentMovie.posterImageName)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .clipped()
+                // Layer 2: Pre-pager crossfade — only while hero active and movie changed.
+                if currentIndex != initialIndex && !posterSwipeReady {
+                    Image(currentMovie.posterImageName)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: sw, height: sh)
+                        .clipped()
+                        .transition(.opacity)
+                }
+
+                // Layer 3: Pager strip — all adjacent posters stay in the hierarchy so
+                // no view is inserted mid-animation (eliminates the freeze/jerk bug).
+                if posterSwipeReady {
+                    let lo = max(0, currentIndex - 1)
+                    let hi = min(movies.count - 1, currentIndex + 1)
+                    ZStack {
+                        ForEach(lo...hi, id: \.self) { idx in
+                            Image(movies[idx].posterImageName)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: sw, height: sh)
+                                .clipped()
+                                .offset(x: CGFloat(idx - currentIndex) * sw + pagerOffset)
+                        }
                     }
-                    .ignoresSafeArea()
                     .transition(.opacity)
                 }
             }
-            .animation(.easeInOut(duration: 0.30), value: currentIndex)
+            .ignoresSafeArea()
+            .animation(.easeInOut(duration: 0.20), value: posterSwipeReady)
         }
         // Apply vertical drag offset for swipe-down-to-dismiss feel.
         // swipeTranslation is intentionally NOT applied here — the poster background
@@ -251,18 +277,25 @@ struct MovieDetailView: View {
         )
         .onAppear {
             currentIndex = initialIndex
-            // 1. Corner radius: 22 → 0, matching the hero spring so the card
-            //    morphs seamlessly into a full-bleed background
-            withAnimation(.spring(response: 0.75, dampingFraction: 0.88)) {
+            // 1. Corner radius: 22 → 0, using the same spring as the hero so the
+            //    clip shape and position/size stay in perfect sync throughout the flight.
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
                 posterCornerRadius = 0
             }
-            // 2. Dark overlay waits for the poster to finish flying before fading in
-            withAnimation(.easeOut(duration: 0.40).delay(0.25)) {
+            // 2. Dark overlay + blur are GPU-expensive; starting them while the hero
+            //    spring is still in heavy motion drops frames and looks jerky.
+            //    Delay until the spring has fully settled (~0.50 s).
+            withAnimation(.easeOut(duration: 0.35).delay(0.50)) {
                 bgOpacity = 1.0
             }
-            // 3. Content elements cascade-fade in with a subtle 10pt nudge up
-            animateContentIn(delay: 0.30)
-            withAnimation(.easeOut(duration: 0.35).delay(0.54)) { buttonVisible = true }
+            // 3. Content elements cascade-fade in after the overlay appears
+            animateContentIn(delay: 0.55)
+            withAnimation(.easeOut(duration: 0.35).delay(0.72)) { buttonVisible = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                withAnimation(.easeInOut(duration: 0.20)) {
+                    posterSwipeReady = true
+                }
+            }
         }
     }
 
@@ -290,16 +323,47 @@ struct MovieDetailView: View {
     private func commitSwipe(to newIndex: Int) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         isTransitioning = true
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            swipeTranslation = 0
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            currentIndex = newIndex
-            onMovieChange(newIndex)
-            resetAnimationStates()
-            animateContentIn(delay: 0.05)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.40) {
-                isTransitioning = false
+
+        if posterSwipeReady {
+            let w = UIScreen.main.bounds.width
+            // Slide the whole strip: negative = going forward, positive = going back.
+            let targetOffset: CGFloat = newIndex > currentIndex ? -w : w
+
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.92)) {
+                pagerOffset = targetOffset
+            }
+
+            // After the spring settles, atomically re-anchor the strip to the new index.
+            // At settle time the new poster is at (1 * w) + (-w) = 0 (centre).
+            // After reset it is at (0 * w) + 0 = 0 — identical position, no visual jump.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    currentIndex = newIndex
+                    pagerOffset  = 0
+                }
+                onMovieChange(newIndex)
+                resetAnimationStates()
+                animateContentIn(delay: 0.05)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.40) {
+                    isTransitioning = false
+                }
+            }
+        } else {
+            // Hero is still visible — use original spring-snap + delayed index update.
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                swipeTranslation = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                // Explicit animation so Layer 2's crossfade still fades in smoothly.
+                withAnimation(.easeInOut(duration: 0.30)) { currentIndex = newIndex }
+                onMovieChange(newIndex)
+                resetAnimationStates()
+                animateContentIn(delay: 0.05)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.40) {
+                    isTransitioning = false
+                }
             }
         }
     }
